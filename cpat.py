@@ -2,7 +2,7 @@ import torch
 from nets import FCNN, FCNN2, FCCritic
 import os
 import shutil
-import numpy as np
+# import numpy as np
 import tqdm
 
 class Compatibility():
@@ -40,15 +40,15 @@ class Compatibility():
         l = self.cnf.l
         return torch.exp((1 / l) * self.violation(x, y)).view((-1, 1,))
 
-    def covariance(self, x, y):
-        # Given batches x and y, estimate the covariance of the joint distribution on x, y as weighted by
-        #   these compatibilities
-        dim = np.prod(x.shape[1:])
-        density = self.density(x, y).view((-1, 1, 1))
-        joint = torch.cat((x, y), axis=1).view((-1, 2*dim, 1))
-        sample_corr = joint @ joint.transpose(1, 2)
-        est_corr = torch.mean(density * sample_corr, axis=0)
-        return est_corr.detach().cpu().numpy()
+    # def covariance(self, x, y):
+    #     # Given batches x and y, estimate the covariance of the joint distribution on x, y as weighted by
+    #     #   these compatibilities
+    #     dim = np.prod(x.shape[1:])
+    #     density = self.density(x, y).view((-1, 1, 1))
+    #     joint = torch.cat((x, y), axis=1).view((-1, 2*dim, 1))
+    #     sample_corr = joint @ joint.transpose(1, 2)
+    #     est_corr = torch.mean(density * sample_corr, axis=0)
+    #     return est_corr.detach().cpu().numpy()
 
     def score(self, source, target):
         # compute grad log cpat(source, target) wrt target

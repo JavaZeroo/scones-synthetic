@@ -23,7 +23,7 @@ class Circle():
 
     def rvs(self, size=(1,)):
         noise = np.random.normal(size=[np.prod(size), 2], scale=self.noise)
-        circle_samples = np.random.normal(size=[size, 2])
+        circle_samples = np.random.normal(size=[size[0], 2])
         circle_samples = (circle_samples / np.linalg.norm(circle_samples, axis=1)[:, None]) + noise
         return circle_samples.reshape(list(size) + [-1])
 
@@ -33,7 +33,8 @@ class SwissRoll():
         self.dim = 2
 
     def rvs(self, size):
-        return make_swiss_roll(n_samples=np.prod(size), noise=self.noise)[0][:, (0, 2)].reshape(list(size) + [-1])
+        return make_swiss_roll(n_samples=np.prod(size), 
+                                noise=self.noise)[0][:, (0, 2)].reshape(list(size) + [-1])
 
 
 class Gaussian():

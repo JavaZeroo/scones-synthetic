@@ -74,8 +74,8 @@ n_samples = 400
 Xs = cnf.source_dist.rvs(size=(n_samples,))
 Xs_th = torch.FloatTensor(Xs).to(cnf.device)
 
-bproj_Xs_th = bproj.projector(Xs_th).detach()
-bproj_Xs = bproj_Xs_th.cpu().numpy()
+#bproj_Xs_th = bproj.projector(Xs_th).detach()
+#bproj_Xs = bproj_Xs_th.cpu().numpy()
 
 
 scones_samples = scones.sample(Xs_th, verbose=False, source_init=True)
@@ -89,7 +89,7 @@ plt.xlim(-12, 16)
 plt.title("Source and Target")
 
 plt.subplot(1, 2, 2)
-plt.scatter(*bproj_Xs.T, label="BPROJ", color="#7067CF")
+#plt.scatter(*bproj_Xs.T, label="BPROJ", color="#7067CF")
 plt.scatter(*scones_samples.reshape(-1, 2).T, label="SCONES", color="#1d3557")
 plt.legend()
 plt.ylim(-15, 16)
@@ -98,7 +98,7 @@ plt.title("Source $\\to$ Target Transportation")
 
 plt.gcf().set_size_inches(10, 5)
 plt.savefig("Source_2_Target.png")
-plt.show()
+#plt.show()
 
 #np.save("Cutout_Bproj_Gaussian->SwissRoll.npy", bproj_Xs)
 #np.save("Cutout_SCONES_Gaussian->SwissRoll.npy", scones_samples)

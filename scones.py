@@ -78,7 +78,9 @@ class SCONES():
             Xt = torch.clone(Xs)
         else:
             Xt = torch.randn(size=[n_samples, 2]).to(self.cnf.device)
-
+        
+        if verbose:
+            t = tqdm.tqdm(total=len(self.score_est.noise_scales), desc='', position=0)    
         for s in self.score_est.noise_scales:
             for _ in range(self.score_est.steps_per_class):
                 a = self.score_est.sampling_lr * (s / self.score_est.noise_scales[-1])**2
@@ -87,6 +89,8 @@ class SCONES():
                 scr = self.score(Xs, Xt, s)
                 with torch.no_grad():
                     Xt = Xt + a * scr + np.sqrt(2*a) * noise
+            if verbose:
+                t.update(1)
         # denoise via tweedie's identity
         Xt.requires_grad = True
         Xt = Xt + self.score_est.noise_scales[-1]**2 * self.score(Xs, Xt, self.score_est.noise_scales[-1])
