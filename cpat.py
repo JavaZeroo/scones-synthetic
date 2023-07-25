@@ -58,11 +58,11 @@ class Compatibility():
         return transport_grad
 
 def init_cpat(cnf):
-    phi = FCCritic(input_dim=cnf.source_dist.dim, hidden_layer_dims=[4096, 4096, 4096]).to(cnf.device)
-    psi = FCCritic(input_dim=cnf.target_dist.dim, hidden_layer_dims=[4096, 4096, 4096]).to(cnf.device)
+    phi = FCCritic(input_dim=cnf.source_dist.dim, hidden_layer_dims=[1024, 1024, 1024]).to(cnf.device)
+    psi = FCCritic(input_dim=cnf.target_dist.dim, hidden_layer_dims=[1024, 1024, 1024]).to(cnf.device)
     return Compatibility(phi, psi, cnf)
 
-def train_cpat(cpat, cnf, verbose=True):
+def train_cpat(cpat, cnf, log_dir, run, verbose=True):
     bs = cnf.cpat_bs
     lr = cnf.cpat_lr
     iters = cnf.cpat_iters
@@ -70,7 +70,7 @@ def train_cpat(cpat, cnf, verbose=True):
     source_dist = cnf.source_dist
     target_dist = cnf.target_dist
 
-    opt = torch.optim.Adam(params=list(cpat.phi.parameters()) + list(cpat.psi.parameters()), lr=lr, betas=(0.9, 0.999))
+    opt = torch.optim.AdamW(params=list(cpat.phi.parameters()) + list(cpat.psi.parameters()), lr=lr, betas=(0.9, 0.999))
 
     if(verbose):
         t = tqdm.tqdm(total=iters, desc='', position=0)
@@ -87,7 +87,13 @@ def train_cpat(cpat, cnf, verbose=True):
         if(verbose):
             t.set_description(f"Objective: {round(obj.item(), 5)} - Average Density: {round(avg_density.item(), 5)}")
             t.update(1)
-
+        if run is not None:
+            run.log(
+                {
+                    "objective": obj.item(),
+                    "average_density": avg_density.item(),
+                }
+            )
         if(i % 500 == 0):
-            cpat.save(os.path.join("pretrained/cpat", cnf.name), train_idx=i)
-            cpat.save(os.path.join("pretrained/cpat", cnf.name))
+            cpat.save(os.path.join(f"{log_dir}cpat", cnf.name), train_idx=i)
+            cpat.save(os.path.join(f"{log_dir}cpat", cnf.name))

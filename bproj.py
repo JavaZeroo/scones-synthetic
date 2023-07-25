@@ -43,7 +43,7 @@ def init_bproj(cpat, cnf):
     return BaryProj(cpat, T, cnf)
 
 
-def train_bproj(bproj, cnf, verbose=True):
+def train_bproj(bproj, cnf, log_dir, run, verbose=True):
     bs = cnf.bproj_bs
     lr = cnf.bproj_lr
     iters = cnf.bproj_iters
@@ -68,11 +68,15 @@ def train_bproj(bproj, cnf, verbose=True):
             t.set_description("Objective: {:.2E}".format(obj.item()))
             t.update(1)
 
-            if(i % 1000 == 0):
-                print("\nCovariance:")
-                source_sample = torch.FloatTensor(source_dist.rvs(size=(10000,))).to(cnf.device)
-                print(bproj.covariance(source_sample))
-
+            # if(i % 1000 == 0):
+            #     print("\nCovariance:")
+            #     source_sample = torch.FloatTensor(source_dist.rvs(size=(10000,))).to(cnf.device)
+            #     print(bproj.covariance(source_sample))
+        if run is not None:
+            run.log({
+                "bproj_obj": obj.item(),
+            })
+        
         if(i % 500 == 0):
-            bproj.save(os.path.join("pretrained/bproj", cnf.name), train_idx=i)
-            bproj.save(os.path.join("pretrained/bproj", cnf.name))
+            bproj.save(os.path.join(f"{log_dir}bproj", cnf.name), train_idx=i)
+            bproj.save(os.path.join(f"{log_dir}bproj", cnf.name))

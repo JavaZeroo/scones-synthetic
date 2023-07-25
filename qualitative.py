@@ -17,7 +17,7 @@ from collections import defaultdict
 Given a configuration, train SCONES and BP and output
 '''
 
-cnf = Config("Swiss-Roll",
+cnf = Config("Swiss-Roll_origin",
              source="gaussian",
              target="swiss-roll",
              l = 2,
@@ -36,11 +36,22 @@ cnf = Config("Swiss-Roll",
              seed=2039)
 torch.manual_seed(cnf.seed)
 np.random.seed(cnf.seed)
-
+import time
+log_dir = 'logs/' + time.strftime("%Y-%m-%d/%H_%M_%S/", time.localtime())
+cnf.log_dir = log_dir
 cpat = init_cpat(cnf)
 
 # If TRUE, ignore any existing pretrained models and overwrite them.
-OVERWRITE = False
+OVERWRITE = True
+
+import wandb
+run = wandb.init(
+    project="scones",
+    config=cnf.__dict__,
+    save_code=True, 
+    name=cnf.name+time.strftime("%Y-%m-%d/%H:%M:%S", time.localtime()),
+    dir=log_dir
+)
 
 # Create directories for saving pretrained models if they do not already exist
 touch_path = lambda p: os.makedirs(p) if not os.path.exists(p) else None
@@ -51,21 +62,21 @@ for path in ['', 'cpat', 'bproj', 'ncsn']:
 if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/cpat", cnf.name))):
     cpat.load(os.path.join("pretrained/cpat", cnf.name, "cpat.pt"))
 else:
-    train_cpat(cpat, cnf, verbose=True)
+    train_cpat(cpat, cnf, log_dir=log_dir, run=run, verbose=True)
 
 bproj = init_bproj(cpat, cnf)
 
 if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/bproj", cnf.name))):
     bproj.load(os.path.join("pretrained/bproj", cnf.name, "bproj.pt"))
 else:
-    train_bproj(bproj, cnf, verbose=True)
+    train_bproj(bproj, cnf, log_dir=log_dir, run=run, verbose=True)
 
 score = init_score(cnf)
 
 if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/score", cnf.name))):
     score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
 else:
-    train_score(score, cnf, verbose=True)
+    train_score(score, cnf, log_dir=log_dir, run=run,verbose=True)
 
 scones = SCONES(cpat, score, bproj, cnf)
 
@@ -78,7 +89,7 @@ Xs_th = torch.FloatTensor(Xs).to(cnf.device)
 #bproj_Xs = bproj_Xs_th.cpu().numpy()
 
 
-scones_samples = scones.sample(Xs_th, verbose=False, source_init=True)
+scones_samples = scones.sample(Xs_th, verbose=True, source_init=True)
 
 plt.subplot(1, 2, 1)
 plt.scatter(*Xs.T, color="#330C2F", label="Source")

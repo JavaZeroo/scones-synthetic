@@ -59,10 +59,10 @@ class Score():
 
 def init_score(cnf):
     d = cnf.target_dim
-    T = FCNN(dims=[d, 2048, 2048, 2048, 2048, d], batchnorm=True).to(cnf.device)
+    T = FCNN(dims=[d, 512, 512, 512, 512, d], batchnorm=True).to(cnf.device)
     return Score(T, cnf)
 
-def train_score(score, cnf, verbose=True):
+def train_score(score, cnf, log_dir, run, verbose=True):
     bs = cnf.score_bs
     lr = cnf.score_lr
     iters = cnf.score_iters
@@ -84,10 +84,13 @@ def train_score(score, cnf, verbose=True):
         if(verbose):
             t.set_description("Objective: {:.2E}".format(obj.item()))
             t.update(1)
-
+        if run is not None:
+            run.log({
+                "objective_score": obj.item(),
+            })
         if(i % 500 == 0):
-            score.save(os.path.join("pretrained/score", cnf.name), train_idx=i)
-            score.save(os.path.join("pretrained/score", cnf.name))
+            score.save(os.path.join(f"{log_dir}score", cnf.name), train_idx=i)
+            score.save(os.path.join(f"{log_dir}score", cnf.name))
 
 class GaussianScore():
     def __init__(self, gaussian, cnf):
@@ -120,10 +123,14 @@ if __name__ == "__main__":
                  score_steps_per_class = 10,
                  score_sampling_lr = 0.0001,
                  seed=2039)
+    from  diagonal_matching import DiagonalMatching
+    cnf.source_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='initial',easy=True)
+    cnf.target_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='final', easy=True)
     ex_samples = cnf.target_dist.rvs(size=(1000,))
     score = init_score(cnf)
     #train_score(score, cnf, verbose=True)
-    score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
+    score.load('/home/ljb/scones-synthetic/tools/logs/2023-07-24/21_09_53/score/Swiss-Roll/score.pt')
+    # score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
     learned_samples = score.sample(size=(1000,)).detach().cpu().numpy()
     plt.subplot(1, 2, 1)
     plt.scatter(*ex_samples.T)
