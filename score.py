@@ -6,6 +6,8 @@ import numpy as np
 import tqdm
 from config import Config
 import matplotlib.pyplot as plt
+from utils import draw_model_params
+
 
 class Score():
     def __init__(self, score_net, cnf, posterior_score=None):
@@ -44,8 +46,10 @@ class Score():
         obj = (d/2) * torch.mean((self.score_net(perturbed_samples.view([-1, d])) + noise.view([-1, d]))**2)
         return obj
 
-    def sample(self, size, Xs=None):
-        if(Xs is None):
+    def sample(self, size, Xs=None, ret_all = False):
+        if ret_all:
+            samples = []
+        if Xs is None:
             Xs = torch.randn(size=[np.prod(size), 2]).to(self.cnf.device)
         with torch.no_grad():
             for s in self.noise_scales:
@@ -53,13 +57,15 @@ class Score():
                     a = self.sampling_lr * (s / self.noise_scales[-1])**2
                     noise = torch.randn(size=[np.prod(size), 2]).to(self.cnf.device)
                     Xs = Xs + a * self.score(Xs, s) + np.sqrt(2*a) * noise
+                    samples.append(Xs.detach().cpu().numpy())
         # denoise via tweedie's identity
         Xs = Xs + self.noise_scales[-1]**2 * self.score(Xs, self.noise_scales[-1])
+        
         return Xs.reshape(list(size) + [-1])
 
 def init_score(cnf):
     d = cnf.target_dim
-    T = FCNN(dims=[d, 512, 512, 512, 512, d], batchnorm=True).to(cnf.device)
+    T = FCNN(dims=[d, 2048, 2048, 2048, 2048, d], batchnorm=True).to(cnf.device)
     return Score(T, cnf)
 
 def train_score(score, cnf, log_dir, run, verbose=True):
@@ -86,7 +92,7 @@ def train_score(score, cnf, log_dir, run, verbose=True):
             t.update(1)
         if run is not None:
             run.log({
-                "objective_score": obj.item(),
+                "mse_score": obj.item(),
             })
         if(i % 500 == 0):
             score.save(os.path.join(f"{log_dir}score", cnf.name), train_idx=i)
@@ -107,34 +113,104 @@ class GaussianScore():
         score = (-prec @ x.view((-1, self.dim, 1)))
         return score.view((-1, self.dim))
 
-if __name__ == "__main__":
+
+def train(config):
     cnf = Config("Swiss-Roll",
                  source="gaussian",
                  target="swiss-roll",
-                 score_lr=0.000001,
-                 score_iters=1000,
-                 score_bs=500,
-                 score_noise_init=3,
-                 score_noise_final=0.01,
-                 scones_iters=1000,
-                 scones_bs=1000,
+                 score_lr=config.score_lr,
+                 score_iters=2000,
+                 score_bs=2000,
+                 score_noise_init=config.score_noise_init,
+                 score_noise_final=config.score_noise_final,
+                #  scones_iters=1000,
+                #  scones_bs=1000,
                  device='cuda',
-                 score_n_classes = 10,
-                 score_steps_per_class = 10,
+                 score_n_classes = config.score_n_classes,
+                 score_steps_per_class = 20,
                  score_sampling_lr = 0.0001,
                  seed=2039)
     from  diagonal_matching import DiagonalMatching
+    import wandb
+    import time
+    
+    log_dir = 'logs/' + time.strftime("%Y-%m-%d/%H_%M_%S/", time.localtime())
+    from pathlib import Path
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    run = wandb.init(
+        project="scones",
+        config=cnf.__dict__,
+        save_code=True, 
+        name=cnf.name+time.strftime("%Y-%m-%d/%H:%M:%S", time.localtime()),
+        dir=log_dir
+    )
+    run.define_metric("mse_score", summary="min")
+
     cnf.source_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='initial',easy=True)
     cnf.target_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='final', easy=True)
     ex_samples = cnf.target_dist.rvs(size=(1000,))
+    Xs = cnf.source_dist.rvs(size=(1000,))
     score = init_score(cnf)
-    #train_score(score, cnf, verbose=True)
-    score.load('/home/ljb/scones-synthetic/tools/logs/2023-07-24/21_09_53/score/Swiss-Roll/score.pt')
+    train_score(score, cnf,log_dir, run, verbose=True)
+    # score.load('/home/ljb/scones-synthetic/tools/logs/2023-07-24/21_09_53/score/Swiss-Roll/score.pt')
     # score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
-    learned_samples = score.sample(size=(1000,)).detach().cpu().numpy()
-    plt.subplot(1, 2, 1)
-    plt.scatter(*ex_samples.T)
-    plt.subplot(1, 2, 2)
-    plt.scatter(*learned_samples.T)
-    #plt.show()
-    plt.savefig('score.png')
+    learned_samples = score.sample(size=(500,), ret_all=True).detach().cpu().numpy()
+    
+    def lerp_color(color1: str, color2: str, t: float) -> str:
+            if color1.startswith('#'):
+                color1 = color1[1:]
+            if color2.startswith('#'):
+                color2 = color2[1:]
+            # 将16进制颜色值转换为RGB值
+            rgb1 = tuple(int(color1[i:i+2], 16) for i in (0, 2, 4))
+            rgb2 = tuple(int(color2[i:i+2], 16) for i in (0, 2, 4))
+
+            # 对每个RGB通道进行线性插值
+            rgb = tuple(int(rgb1[i] + t * (rgb2[i] - rgb1[i])) for i in range(3))
+
+            # 将RGB值转换回16进制形式
+            return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+    def plot_matchings(fig, t0_points, t1_points, projection=lambda x: x, **kwargs):
+        kwargs["color"] = kwargs.get("color", "gray")
+        kwargs["alpha"] = kwargs.get("alpha", .7)
+        # kwargs["lw"] = kwargs.get("lw", .2)
+        extended_coords = np.concatenate([projection(t0_points), projection(t1_points)], axis=1)
+        fig.plot(extended_coords[:,::2].T, extended_coords[:,1::2].T, zorder=0, **kwargs);
+    
+    fig, ax = plt.subplots()
+    # ax.scatter(*ex_samples.T)
+    ax.scatter(*ex_samples.T, color="#7B287D", alpha=0.5)
+    ax.scatter(*Xs.T, color="#1d3557", alpha=0.5)
+    plot_matchings(ax, Xs, ex_samples, lw=.2, alpha=.5)
+
+    
+    for i, sample in enumerate(learned_samples):
+        ax.scatter(*sample.T, color=lerp_color("#50d67c","#0e5298", i/len(learned_samples)), alpha=0.5, s=0.5)
+        if i == len(learned_samples) - 1:
+            plot_matchings(ax, Xs, ex_samples, lw=.2, alpha=.5)
+            
+    # 打印出最后一个learned sample和target的MSE
+    mse = np.mean((learned_samples[-1] - ex_samples)**2)
+    print("MSE: ", mse)
+    
+    run.log(
+        {
+            'result':fig,
+            'model': draw_model_params(score.score_net)
+        }
+    )
+    # plt.show()
+    fig.savefig(f'{log_dir}score.png')
+    draw_model_params(score.score_net).savefig(f'{log_dir}score_model.png')
+    return mse
+
+if __name__ == "__main__":
+    from easydict import EasyDict as edict
+    train(edict({
+        'score_lr': 0.0001,
+        'score_bs': 100, 
+        'score_noise_init': 1,
+        'score_noise_final': 0.1,
+        'score_n_classes': 10,
+    }))
