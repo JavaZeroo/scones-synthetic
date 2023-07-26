@@ -1,5 +1,5 @@
 import wandb
-from score import train
+from score import train, train_raw
 sweep_configuration = {
     'method': 'bayes',
     'metric': 
@@ -9,11 +9,12 @@ sweep_configuration = {
         },
     'parameters': 
     {
-        'score_lr': {'max': 0.001, 'min': 0.0000001},
+        'score_lr': {'value': 0.0001},
         # 'score_bs': {'values': [1000, 2000, 2500]},
-        'score_noise_init': {'max': 30., 'min': 0.1},
-        'score_noise_final': {'max': 0.1, 'min': 0.001},
-        'score_n_classes': {'values': [2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40]},
+        'score_noise_init': {'max': 30., 'min': 5.},
+        'score_noise_final': {'values':[0.03, 0.015, 0.1, 0.3]},
+        'score_n_classes': {'values': [5, 8,10, 16, 18]},
+        'hidden_layer_nums': {'values': [32, 64, 128, 256]},
      }
 }
 
@@ -28,4 +29,4 @@ def main():
     score = train(wandb.config)
     wandb.log({'score': score})
 
-wandb.agent(sweep_id, function=main, count=10)
+wandb.agent(sweep_id, function=main, count=20)

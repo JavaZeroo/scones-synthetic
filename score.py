@@ -6,7 +6,7 @@ import numpy as np
 import tqdm
 from config import Config
 import matplotlib.pyplot as plt
-from utils import draw_model_params
+from utils import draw_model_params, plot_matchings
 
 
 class Score():
@@ -40,8 +40,8 @@ class Score():
             return self.score_net(x) / noise_std
 
     def dsm_loss(self, sample):
-        noise = torch.randn([self.num_classes] + list(sample.size())).to(self.cnf.device)
         perturbed_samples = noise * self._noise_scales_th.reshape([-1, 1, 1]) + torch.stack([sample] * self.num_classes, dim = 0)
+        noise = torch.randn([self.num_classes] + list(sample.size())).to(self.cnf.device)
         d = self.cnf.target_dist.dim
         obj = (d/2) * torch.mean((self.score_net(perturbed_samples.view([-1, d])) + noise.view([-1, d]))**2)
         return obj
@@ -57,7 +57,8 @@ class Score():
                     a = self.sampling_lr * (s / self.noise_scales[-1])**2
                     noise = torch.randn(size=[np.prod(size), 2]).to(self.cnf.device)
                     Xs = Xs + a * self.score(Xs, s) + np.sqrt(2*a) * noise
-                    samples.append(Xs.detach().cpu().numpy())
+                    if ret_all:
+                        samples.append(Xs.detach().cpu().numpy())
         # denoise via tweedie's identity
         Xs = Xs + self.noise_scales[-1]**2 * self.score(Xs, self.noise_scales[-1])
         
@@ -65,7 +66,7 @@ class Score():
 
 def init_score(cnf):
     d = cnf.target_dim
-    T = FCNN(dims=[d, 2048, 2048, 2048, 2048, d], batchnorm=True).to(cnf.device)
+    T = FCNN(dims=[d, cnf.hidden_layer_nums, cnf.hidden_layer_nums, cnf.hidden_layer_nums, cnf.hidden_layer_nums, d], batchnorm=True).to(cnf.device)
     return Score(T, cnf)
 
 def train_score(score, cnf, log_dir, run, verbose=True):
@@ -75,7 +76,7 @@ def train_score(score, cnf, log_dir, run, verbose=True):
 
     target_dist = cnf.target_dist
 
-    opt = torch.optim.Adam(params=score.score_net.parameters(), lr=lr)
+    opt = torch.optim.SGD(params=score.score_net.parameters(), lr=lr)
 
     if(verbose):
         t = tqdm.tqdm(total=iters, desc='', position=0)
@@ -88,7 +89,7 @@ def train_score(score, cnf, log_dir, run, verbose=True):
         opt.step()
 
         if(verbose):
-            t.set_description("Objective: {:.2E}".format(obj.item()))
+            t.set_description("MSE_loss: {:.4}".format(obj.item()))
             t.update(1)
         if run is not None:
             run.log({
@@ -119,7 +120,7 @@ def train(config):
                  source="gaussian",
                  target="swiss-roll",
                  score_lr=config.score_lr,
-                 score_iters=2000,
+                 score_iters=2500,
                  score_bs=2000,
                  score_noise_init=config.score_noise_init,
                  score_noise_final=config.score_noise_final,
@@ -129,6 +130,7 @@ def train(config):
                  score_n_classes = config.score_n_classes,
                  score_steps_per_class = 20,
                  score_sampling_lr = 0.0001,
+                 hidden_layer_nums = config.hidden_layer_nums,
                  seed=2039)
     from  diagonal_matching import DiagonalMatching
     import wandb
@@ -148,13 +150,13 @@ def train(config):
 
     cnf.source_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='initial',easy=True)
     cnf.target_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='final', easy=True)
-    ex_samples = cnf.target_dist.rvs(size=(1000,))
-    Xs = cnf.source_dist.rvs(size=(1000,))
+    ex_samples = cnf.target_dist.rvs(size=(500,))
+    Xs = cnf.source_dist.rvs(size=(500,))
     score = init_score(cnf)
     train_score(score, cnf,log_dir, run, verbose=True)
     # score.load('/home/ljb/scones-synthetic/tools/logs/2023-07-24/21_09_53/score/Swiss-Roll/score.pt')
     # score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
-    learned_samples = score.sample(size=(500,), ret_all=True).detach().cpu().numpy()
+    learned_samples = score.sample(size=(500,), Xs=torch.FloatTensor(cnf.source_dist.rvs(size=(500,))).cuda(), ret_all=False).detach().cpu().numpy()
     
     def lerp_color(color1: str, color2: str, t: float) -> str:
             if color1.startswith('#'):
@@ -170,13 +172,6 @@ def train(config):
 
             # 将RGB值转换回16进制形式
             return '#{:02x}{:02x}{:02x}'.format(*rgb)
-
-    def plot_matchings(fig, t0_points, t1_points, projection=lambda x: x, **kwargs):
-        kwargs["color"] = kwargs.get("color", "gray")
-        kwargs["alpha"] = kwargs.get("alpha", .7)
-        # kwargs["lw"] = kwargs.get("lw", .2)
-        extended_coords = np.concatenate([projection(t0_points), projection(t1_points)], axis=1)
-        fig.plot(extended_coords[:,::2].T, extended_coords[:,1::2].T, zorder=0, **kwargs);
     
     fig, ax = plt.subplots()
     # ax.scatter(*ex_samples.T)
@@ -184,11 +179,97 @@ def train(config):
     ax.scatter(*Xs.T, color="#1d3557", alpha=0.5)
     plot_matchings(ax, Xs, ex_samples, lw=.2, alpha=.5)
 
+    ax.scatter(*learned_samples.T, color="#50d67c", alpha=0.5, s=0.8)
+    plot_matchings(ax, Xs, learned_samples, color='#0e5298', lw=.3, alpha=.4)
+    # for i, sample in enumerate(learned_samples):
+        # if i == len(learned_samples) - 1:
+            
+            
+            
+    # 打印出最后一个learned sample和target的MSE
+    mse = np.mean((learned_samples - ex_samples)**2)
+    print("MSE: ", mse)
     
-    for i, sample in enumerate(learned_samples):
-        ax.scatter(*sample.T, color=lerp_color("#50d67c","#0e5298", i/len(learned_samples)), alpha=0.5, s=0.5)
-        if i == len(learned_samples) - 1:
-            plot_matchings(ax, Xs, ex_samples, lw=.2, alpha=.5)
+    run.log(
+        {
+            'result':fig,
+            'model': draw_model_params(score.score_net)
+        }
+    )
+    # plt.show()
+    fig.savefig(f'{log_dir}score.png')
+    draw_model_params(score.score_net).savefig(f'{log_dir}score_model.png')
+    return mse
+
+
+def train_raw(config):
+    cnf = Config("Swiss-Roll",
+                 source="gaussian",
+                 target="swiss-roll",
+                 score_lr=config.score_lr,
+                 score_iters=1000,
+                 score_bs=2000,
+                 score_noise_init=config.score_noise_init,
+                 score_noise_final=config.score_noise_final,
+                #  scones_iters=1000,
+                #  scones_bs=1000,
+                 device='cuda',
+                 score_n_classes = config.score_n_classes,
+                 score_steps_per_class = 20,
+                 score_sampling_lr = 0.0001,
+                 hidden_layer_nums = config.hidden_layer_nums,
+                 seed=2039)
+    from  diagonal_matching import DiagonalMatching, TooEasy
+    import wandb
+    import time
+    from pathlib import Path
+    cnf.source_dist = TooEasy(mode='initial')
+    cnf.target_dist = TooEasy(mode='final')
+    log_dir = 'logs/' + time.strftime("%Y-%m-%d/%H_%M_%S/", time.localtime())
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    cnf.name=cnf.target_dist.__class__.__name__
+    
+    run = wandb.init(
+        project="scones",
+        config=cnf.__dict__,
+        save_code=True, 
+        name=cnf.name+time.strftime("%Y-%m-%d/%H:%M:%S", time.localtime()),
+        dir=log_dir
+    )
+    run.define_metric("mse_score", summary="min")
+    # cnf.source_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='initial',easy=True)
+    # cnf.target_dist = DiagonalMatching(n_samples=cnf.scones_samples_per_source, mode='final', easy=True)
+
+    ex_samples = cnf.target_dist.rvs(size=(1000,))
+    Xs = cnf.source_dist.rvs(size=(1000,))
+    score = init_score(cnf)
+    train_score(score, cnf,log_dir, run, verbose=True)
+    # score.load('/home/ljb/scones-synthetic/tools/logs/2023-07-24/21_09_53/score/Swiss-Roll/score.pt')
+    # score.load(os.path.join("pretrained/score", cnf.name, "score.pt"))
+    learned_samples = score.sample(size=(1000,),Xs=torch.FloatTensor(cnf.target_dist.rvs((1000,))).cuda(), ret_all=False).detach().cpu().numpy()
+    
+    def lerp_color(color1: str, color2: str, t: float) -> str:
+            if color1.startswith('#'):
+                color1 = color1[1:]
+            if color2.startswith('#'):
+                color2 = color2[1:]
+            # 将16进制颜色值转换为RGB值
+            rgb1 = tuple(int(color1[i:i+2], 16) for i in (0, 2, 4))
+            rgb2 = tuple(int(color2[i:i+2], 16) for i in (0, 2, 4))
+
+            # 对每个RGB通道进行线性插值
+            rgb = tuple(int(rgb1[i] + t * (rgb2[i] - rgb1[i])) for i in range(3))
+
+            # 将RGB值转换回16进制形式
+            return '#{:02x}{:02x}{:02x}'.format(*rgb)
+    
+    fig, ax = plt.subplots()
+    ax.scatter(*Xs.T, color="#1d3557", alpha=0.5)
+    ax.scatter(*ex_samples.T, color="#7B287D", alpha=0.5)
+    plot_matchings(ax, Xs, ex_samples, lw=.2, alpha=.5)
+
+    ax.scatter(*learned_samples.T, color='#50d67c')
+    plot_matchings(ax, Xs, learned_samples, lw=.2, alpha=.8)
             
     # 打印出最后一个learned sample和target的MSE
     mse = np.mean((learned_samples[-1] - ex_samples)**2)
@@ -207,10 +288,11 @@ def train(config):
 
 if __name__ == "__main__":
     from easydict import EasyDict as edict
-    train(edict({
+    train_raw(edict({
         'score_lr': 0.0001,
-        'score_bs': 100, 
-        'score_noise_init': 1,
+        'score_bs': 2000, 
+        'score_noise_init': 5,
         'score_noise_final': 0.1,
         'score_n_classes': 10,
+        'hidden_layer_nums': 512
     }))

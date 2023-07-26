@@ -25,3 +25,18 @@ def draw_model_params(model, show=False):
         
     return fig
 
+def plot_matchings(ax, t0_points, t1_points, projection=lambda x: x, **kwargs):
+    kwargs["color"] = kwargs.get("color", "gray")
+    kwargs["alpha"] = kwargs.get("alpha", .7)
+    # kwargs["lw"] = kwargs.get("lw", .2)
+    extended_coords = np.concatenate([projection(t0_points), projection(t1_points)], axis=1)
+    ax.plot(extended_coords[:,::2].T, extended_coords[:,1::2].T, zorder=0, **kwargs);
+    return ax
+
+
+def draw_source2target(source, target):
+    fig, ax = plt.subplots()
+    ax.scatter(*source.T, color="#1d3557", alpha=0.5)
+    ax.scatter(*target.T, color="#7B287D", alpha=0.5)
+    ax = plot_matchings(ax, source, target, lw=.7)
+    return fig    

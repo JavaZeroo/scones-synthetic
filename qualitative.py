@@ -55,7 +55,7 @@ run = wandb.init(
 
 # Create directories for saving pretrained models if they do not already exist
 touch_path = lambda p: os.makedirs(p) if not os.path.exists(p) else None
-for path in ['', 'cpat', 'bproj', 'ncsn']:
+for path in ['', 'cpat', 'ncsn']:
     touch_path('pretrained/' + path)
 
 # Search for and load any existing pretrained models
@@ -64,13 +64,6 @@ if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/cpat", cnf.name)
 else:
     train_cpat(cpat, cnf, log_dir=log_dir, run=run, verbose=True)
 
-bproj = init_bproj(cpat, cnf)
-
-if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/bproj", cnf.name))):
-    bproj.load(os.path.join("pretrained/bproj", cnf.name, "bproj.pt"))
-else:
-    train_bproj(bproj, cnf, log_dir=log_dir, run=run, verbose=True)
-
 score = init_score(cnf)
 
 if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/score", cnf.name))):
@@ -78,16 +71,12 @@ if ((not OVERWRITE) and os.path.exists(os.path.join("pretrained/score", cnf.name
 else:
     train_score(score, cnf, log_dir=log_dir, run=run,verbose=True)
 
-scones = SCONES(cpat, score, bproj, cnf)
+scones = SCONES(cpat, score, None, cnf)
 
 # Sample and test the model 
 n_samples = 400
 Xs = cnf.source_dist.rvs(size=(n_samples,))
 Xs_th = torch.FloatTensor(Xs).to(cnf.device)
-
-#bproj_Xs_th = bproj.projector(Xs_th).detach()
-#bproj_Xs = bproj_Xs_th.cpu().numpy()
-
 
 scones_samples = scones.sample(Xs_th, verbose=True, source_init=True)
 
@@ -113,6 +102,6 @@ plt.savefig("Source_2_Target.png")
 
 #np.save("Cutout_Bproj_Gaussian->SwissRoll.npy", bproj_Xs)
 #np.save("Cutout_SCONES_Gaussian->SwissRoll.npy", scones_samples)
-np.save("Cutout.npy", scones_samples)
-np.save("Sources.npy", Xs)
-np.save("Target.npy", cnf.target_dist.rvs(size=(k,)))
+# np.save("Cutout.npy", scones_samples)
+# np.save("Sources.npy", Xs)
+# np.save("Target.npy", cnf.target_dist.rvs(size=(k,)))

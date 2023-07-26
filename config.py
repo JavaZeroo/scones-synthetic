@@ -35,6 +35,7 @@ class Config():
                  score_noise_init = 3,
                  score_noise_final = 0.01,
                  scones_samples_per_source = 10,
+                 hidden_layer_nums = 2048, 
                  seed=2039):
         '''
         Configuration file for qualitative transportation experiments.
@@ -91,6 +92,7 @@ class Config():
         self.scones_bs = scones_bs
         self.cov_samples = cov_samples
         self.device = device
+        self.hidden_layer_nums = hidden_layer_nums
         self.seed = seed
 
 class GaussianConfig():
